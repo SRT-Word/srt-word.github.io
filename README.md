@@ -97,7 +97,8 @@ index.html            — страница приложения
 css/style.css         — стили
 js/app.js             — логика (парсер SRT, дифф Майерса по словам, сборка результата)
 tests/test.js         — тесты для Node.js
-favicon.ico           — фавиконка (+ favicon-32/192/512.png, apple-touch-icon.png)
+favicon.svg           — векторная фавиконка «торнадо» (+ .ico, png 16/32/48/192/512,
+                        apple-touch-icon.png)
 ```
 
 ## Лицензия
