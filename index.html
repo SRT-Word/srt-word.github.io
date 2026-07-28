@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SRT ⇄ Script Compare — сверка субтитров со сценарием</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js" defer></script>
+<script src="js/app.js" defer></script>
+</head>
+<body>
+
+<header>
+  <h1>SRT ⇄ Script Compare</h1>
+  <p class="sub">Сверка SRT-субтитров с утверждённым сценарием (Word).
+  Тайм-коды остаются нетронутыми, меняется только текст.</p>
+</header>
+
+<main>
+
+  <!-- Шаг 1: входные данные -->
+  <section class="step">
+    <h2><span class="n">1</span> Вставьте данные</h2>
+    <div class="inputs">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>SRT-файл (как есть, с тайм-кодами)</h3>
+          <label class="filebtn">Загрузить .srt
+            <input type="file" id="srtFile" accept=".srt,.txt">
+          </label>
+        </div>
+        <textarea id="srtInput" spellcheck="false"
+          placeholder="1&#10;00:00:06,300 --> 00:00:09,970&#10;Batteries are a consumable part that will&#10;eventually need replacement...&#10;&#10;2&#10;..."></textarea>
+        <div class="hint" id="srtCount">0 слов</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Сценарий (текст из Word)</h3>
+          <label class="filebtn">Загрузить .docx
+            <input type="file" id="docFile" accept=".docx,.txt">
+          </label>
+        </div>
+        <textarea id="docInput" spellcheck="false"
+          placeholder="Вставьте сюда нужный текст сценария из Word-документа (только колонку Script, без таблиц и заголовков) — или загрузите .docx, текст извлечётся автоматически.&#10;&#10;После автозагрузки .docx удалите лишние строки (названия разделов и т.п.), оставив только текст, который звучит в видео."></textarea>
+        <div class="hint" id="docCount">0 слов</div>
+      </div>
+    </div>
+
+    <div class="options">
+      <label><input type="checkbox" id="optStrike" checked>
+        При импорте .docx убирать <s>зачёркнутый</s> текст (вырезанные фрагменты)</label>
+      <label><input type="checkbox" id="optDash" checked>
+        Тире сценария «—», «--» приводить к « - »</label>
+      <label><input type="checkbox" id="optRemoveEmpty" checked>
+        Удалять пустые блоки субтитров из результата</label>
+    </div>
+
+    <button id="btnCompare" class="primary">Сравнить</button>
+  </section>
+
+  <!-- Шаг 2 и 3: результаты -->
+  <section class="step" id="results" hidden>
+    <h2><span class="n">2</span> Правки <small>— клик по подсветке включает/выключает правку</small></h2>
+
+    <div class="statsbar">
+      <span id="stats"></span>
+      <span id="appliedCounter"></span>
+      <span class="grow"></span>
+      <button id="btnAll" class="mini">Применить все</button>
+      <button id="btnNone" class="mini">Снять все</button>
+    </div>
+
+    <div class="legend">
+      <span class="lg"><span class="sw del"></span> убирается из SRT</span>
+      <span class="lg"><span class="sw ins"></span> добавляется из сценария</span>
+      <span class="lg"><span class="sw off"></span> правка выключена</span>
+      <span class="lg"><span class="bm-demo">12</span> номер блока субтитров</span>
+    </div>
+
+    <div id="diffView" class="diff"></div>
+
+    <h2><span class="n">3</span> Готовый SRT <small>— тайм-коды не тронуты, нумерация обновлена</small></h2>
+    <textarea id="output" class="out" spellcheck="false" readonly></textarea>
+    <div class="actions">
+      <button id="btnCopy">Копировать</button>
+      <button id="btnDownload" class="primary">Скачать .srt</button>
+    </div>
+  </section>
+
+  <details class="rules">
+    <summary>Правила сверки, заложенные в инструмент</summary>
+    <ul>
+      <li>Тайм-коды и разбиение на блоки берутся из исходного SRT и не меняются; нумерация блоков в результате идёт заново с 1.</li>
+      <li>«Умные» кавычки/апострофы (’ “ ”), неразрывные пробелы и «…» не считаются различиями — в результате остаётся вариант из SRT.</li>
+      <li>Зачёркнутый текст в .docx — это вырезанные из видео фрагменты, при импорте он отбрасывается.</li>
+      <li>Маркированные списки из .docx переносятся с маркером «•».</li>
+      <li>Одиночные тире сценария («--», «—») превращаются в « - ».</li>
+      <li>Длинные фрагменты (8+ слов), которые есть в SRT, но отсутствуют в сценарии (вступления, представления спикеров), по умолчанию <b>не</b> удаляются — включите такую правку кликом, если удалить всё же нужно.</li>
+      <li>Каждую правку можно выключить кликом — например, если сценарий содержит опечатку, а в SRT написано верно (номера моделей, URL, телефоны и т.п. чаще правильнее в SRT).</li>
+      <li>Переносы строк внутри блока сохраняются с исходных позиций; если строка из-за правок «слиплась», блок автоматически перебивается на исходное число строк.</li>
+    </ul>
+  </details>
+
+</main>
+
+<footer>
+  Работает полностью в браузере — файлы никуда не отправляются.
+</footer>
+
+</body>
+</html>
