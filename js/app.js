@@ -299,6 +299,74 @@
     return parts.join('\n\n') + '\n';
   }
 
+  /* ---------------- Извлечение текста из HTML (после mammoth) ---------------- */
+
+  // Примечание: mammoth сам обрабатывает режим рецензирования Word:
+  // tracked-вставки (w:ins) принимаются, tracked-удаления (w:del) отбрасываются.
+  // Проверено экспериментально. Поэтому загрузка .docx безопаснее копипаста.
+
+  function collectLines(root, out) {
+    root.querySelectorAll('p,li,h1,h2,h3,h4,h5,h6').forEach(function (el) {
+      if (el.tagName !== 'LI' && el.closest('li')) return; // p внутри li — не дублируем
+      var node = el;
+      if (el.tagName === 'LI' && el.querySelector('ul,ol')) {
+        node = el.cloneNode(true);
+        node.querySelectorAll('ul,ol').forEach(function (x) { x.remove(); });
+      }
+      var t = node.textContent.replace(/\s+/g, ' ').trim();
+      if (!t) return;
+      if (el.tagName === 'LI') t = '\u2022 ' + t; // маркер списка -> "•"
+      out.push(t);
+    });
+  }
+
+  // Если документ — «мастер-таблица» со столбцом Script (#, Section, Script,
+  // Asset...), берём только ячейки этого столбца. Иначе — весь документ.
+  function extractDocxText(html, opts, DOMParserImpl) {
+    opts = opts || {};
+    var P = DOMParserImpl || (typeof DOMParser !== 'undefined' ? DOMParser : null);
+    var doc = new P().parseFromString(html, 'text/html');
+    if (opts.stripStrike !== false) {
+      doc.querySelectorAll('s,del,strike').forEach(function (el) { el.remove(); });
+    }
+    var out = [];
+    var scriptCells = [];
+    doc.querySelectorAll('table').forEach(function (tbl) {
+      var rows = Array.prototype.slice.call(
+        tbl.querySelectorAll(':scope > tr, :scope > tbody > tr, :scope > thead > tr')
+      );
+      if (!rows.length) return;
+      var headerRow = -1, colIdx = -1;
+      for (var r = 0; r < Math.min(rows.length, 3) && colIdx === -1; r++) {
+        var cells = rows[r].children;
+        for (var c = 0; c < cells.length; c++) {
+          var t = cells[c].textContent.replace(/\s+/g, ' ').trim().toLowerCase();
+          if (t === 'script' || t.indexOf('script') === 0) {
+            headerRow = r; colIdx = c; break;
+          }
+        }
+      }
+      if (colIdx === -1) return;
+      for (var r2 = headerRow + 1; r2 < rows.length; r2++) {
+        var cell = rows[r2].children[colIdx];
+        if (cell) scriptCells.push(cell);
+      }
+    });
+    if (scriptCells.length) {
+      scriptCells.forEach(function (cell) {
+        var before = out.length;
+        collectLines(cell, out);
+        if (out.length === before) {
+          var t = cell.textContent.replace(/\s+/g, ' ').trim();
+          if (t) out.push(t);
+        }
+      });
+    } else {
+      collectLines(doc.body, out);
+    }
+    return out.join('\n');
+  }
+
   /* ---------------- Экспорт для тестов (Node) ---------------- */
 
   var api = {
@@ -310,7 +378,8 @@
     diffTokens: diffTokens,
     groupOps: groupOps,
     buildCorrected: buildCorrected,
-    balanceWords: balanceWords
+    balanceWords: balanceWords,
+    extractDocxText: extractDocxText
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof document === 'undefined') return; // Node — только логика, без UI
@@ -356,24 +425,9 @@
     file.arrayBuffer().then(function (buf) {
       return window.mammoth.convertToHtml({ arrayBuffer: buf });
     }).then(function (res) {
-      var doc = new DOMParser().parseFromString(res.value, 'text/html');
-      if ($('optStrike').checked) {
-        doc.querySelectorAll('s,del,strike').forEach(function (el) { el.remove(); });
-      }
-      var out = [];
-      doc.body.querySelectorAll('p,li,h1,h2,h3,h4,h5,h6').forEach(function (el) {
-        if (el.tagName !== 'LI' && el.closest('li')) return; // p внутри li — не дублируем
-        var node = el;
-        if (el.tagName === 'LI' && el.querySelector('ul,ol')) {
-          node = el.cloneNode(true);
-          node.querySelectorAll('ul,ol').forEach(function (x) { x.remove(); });
-        }
-        var t = node.textContent.replace(/\s+/g, ' ').trim();
-        if (!t) return;
-        if (el.tagName === 'LI') t = '\u2022 ' + t; // маркер списка -> "•"
-        out.push(t);
+      docTA.value = extractDocxText(res.value, {
+        stripStrike: $('optStrike').checked
       });
-      docTA.value = out.join('\n');
       updateCounts();
     }).catch(function (e) {
       alert('Не удалось прочитать .docx: ' + e.message);
