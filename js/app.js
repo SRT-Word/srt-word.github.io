@@ -42,7 +42,53 @@
   function normalizeDashes(s) {
     return s
       .replace(/\s*--\s*/g, ' - ')
-      .replace(/\s*[\u2014\u2013]\s*/g, ' - ');
+      .replace(/\s*[\u2014\u2013]\s*/g, ' - ')
+      // « -style» в доке = отдельное тире + слово: тире остаётся в своём
+      // блоке, слово — в своём, текст не переезжает в чужой тайм-код
+      .replace(/(\s)-(?=[A-Za-z\u0410-\u044f\u0401\u0451])/g, '$1- ');
+  }
+
+  // Вычищаем ссылки-комментарии Word из скопированного текста:
+  // инлайновые [[ZD1]](#_msocom_1) и целые строки-тела комментариев (#_msoanchor_)
+  function stripWordComments(s) {
+    var lines = String(s || '').split(/\r?\n/).filter(function (ln) {
+      return ln.indexOf('#_msoanchor_') === -1;
+    });
+    s = lines.join('\n');
+    s = s.replace(/\[\[[^\[\]]{1,16}\]\]\(#_msocom_\d+\)/g, ' ');
+    s = s.replace(/\(#_msocom_\d+\)/g, ' ');
+    // вырезанный (зачёркнутый) текст в markdown-виде: providing~~ precise ~~optimal
+    s = s.replace(/~~[\s\S]*?~~/g, ' ');
+    s = s.replace(/[ \t]{2,}/g, ' ');
+    return s;
+  }
+
+  // «...verbatim.Use this page» — в Word тут был перенос строки внутри абзаца
+  // (Shift+Enter); при извлечении текста пробел терялся и слова склеивались.
+  function splitGluedSentences(s) {
+    return s.replace(
+      /([a-z\u0430-\u044f\u0451\u00AE\u2122)\]])([.!?])([A-Z\u0410-\u042f\u0401][a-z\u0430-\u044f\u0451])/g,
+      '$1$2 $3');
+  }
+
+  // Человеческие ошибки в доке после вырезок: «точка, за ней запятая» и
+  // наоборот — невалидные сочетания. Троеточие «...» не трогаем.
+  function fixPunctuationCollisions(s) {
+    // приклеиваем «оторванные» знаки к предыдущему слову
+    s = s.replace(/\s+,(?=\s|$)/g, ',');
+    s = s.replace(/\s+\.(?!\.)(?=\s|$)/g, '.');
+    // дубли
+    s = s.replace(/,\s*,+/g, ',');
+    s = s.replace(/\.\s+\.(?!\.)/g, '.');
+    // «? ,» «! .» — остаётся ? / !
+    s = s.replace(/([?!])\s*[,.](?!\.)/g, '$1');
+    // «. ,» перед строчной — побеждает запятая; перед заглавной — точка
+    s = s.replace(/\.\s*,\s*(?=[a-zа-яё])/g, ', ');
+    s = s.replace(/\.\s*,\s*(?=["'«(]?[A-ZА-ЯЁ0-9])/g, '. ');
+    // «, .» перед заглавной — точка; перед строчной — запятая
+    s = s.replace(/,\s*\.(?!\.)\s*(?=["'«(]?[A-ZА-ЯЁ0-9])/g, '. ');
+    s = s.replace(/,\s*\.(?!\.)\s*(?=[a-zа-яё])/g, ', ');
+    return s;
   }
 
   /* ---------------- Разбор SRT ---------------- */
@@ -167,6 +213,74 @@
     return groups;
   }
 
+  /* ---------------- Выравнивание замен по схожести ---------------- */
+
+  function levDist(a, b) {
+    var n = a.length, m = b.length;
+    if (!n) return m;
+    if (!m) return n;
+    var prev = [], cur = [], i, j, t;
+    for (j = 0; j <= m; j++) prev[j] = j;
+    for (i = 1; i <= n; i++) {
+      cur[0] = i;
+      for (j = 1; j <= m; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1,
+          prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      t = prev; prev = cur; cur = t;
+    }
+    return prev[m];
+  }
+
+  function tokenSim(a, b) {
+    a = normToken(a).toLowerCase();
+    b = normToken(b).toLowerCase();
+    if (a === b) return 1;
+    var sa = a.replace(/[^0-9a-z\u0430-\u044f\u0451]/g, '');
+    var sb = b.replace(/[^0-9a-z\u0430-\u044f\u0451]/g, '');
+    if (sa && sa === sb) return 0.95;
+    var x = sa || a, y = sb || b;
+    var M = Math.max(x.length, y.length) || 1;
+    return Math.max(0, 1 - levDist(x, y) / M);
+  }
+
+  // Монотонное выравнивание (Нидлман-Вунш) вставляемых слов на удаляемые.
+  // Возвращает map[j] = индекс удаляемого слова для j-го вставляемого.
+  // Так «De Dion» встаёт на место «D-D-On» в СВОЁМ блоке, а «-style» — на
+  // место «style» в следующем, и текст не переезжает в чужой тайм-код.
+  function alignInsToDel(delToks, insToks) {
+    var n = delToks.length, m = insToks.length, GAP = -0.35;
+    var S = [], P = [], i, j;
+    for (i = 0; i <= n; i++) {
+      S.push(new Array(m + 1).fill(0));
+      P.push(new Array(m + 1).fill(0));
+    }
+    for (i = 1; i <= n; i++) { S[i][0] = S[i - 1][0] + GAP; P[i][0] = 1; }
+    for (j = 1; j <= m; j++) { S[0][j] = S[0][j - 1] + GAP; P[0][j] = 2; }
+    for (i = 1; i <= n; i++) {
+      for (j = 1; j <= m; j++) {
+        var diag = S[i - 1][j - 1] + tokenSim(delToks[i - 1], insToks[j - 1]);
+        var up = S[i - 1][j] + GAP;
+        var left = S[i][j - 1] + GAP;
+        if (diag >= up && diag >= left) { S[i][j] = diag; P[i][j] = 0; }
+        else if (up >= left) { S[i][j] = up; P[i][j] = 1; }
+        else { S[i][j] = left; P[i][j] = 2; }
+      }
+    }
+    var map = new Array(m).fill(-1);
+    i = n; j = m;
+    while (i > 0 || j > 0) {
+      var p = (i > 0 && j > 0) ? P[i][j] : (i > 0 ? 1 : 2);
+      if (p === 0) { map[j - 1] = i - 1; i--; j--; }
+      else if (p === 1) i--;
+      else j--;
+    }
+    var last = -1;
+    for (j = 0; j < m; j++) { if (map[j] !== -1) last = map[j]; else if (last !== -1) map[j] = last; }
+    for (j = m - 1; j >= 0; j--) { if (map[j] === -1) map[j] = (j < m - 1) ? map[j + 1] : 0; }
+    return map;
+  }
+
   /* ---------------- Сборка исправленного SRT ---------------- */
 
   function balanceWords(words, L) {
@@ -235,13 +349,23 @@
           perBlock[aw[ai].blockIdx].push({ text: aw[ai].text, ai: ai });
         });
       } else if (dels.length) {
-        // Замена: i-е вставляемое слово идёт в блок i-го удаляемого и
-        // наследует его позицию строки (хвост — в блок последнего удаляемого)
+        // Замена: каждое вставляемое слово идёт в блок наиболее похожего
+        // удаляемого (выравнивание по схожести, порядок монотонный) и
+        // наследует его позицию строки
+        var amap = alignInsToDel(
+          dels.map(function (ai2) { return aw[ai2].text; }),
+          inss.map(function (bi3) { return bTokens[bi3]; })
+        );
+        var usedDel = {};
         inss.forEach(function (bi2, idx) {
-          var ai = dels[Math.min(idx, dels.length - 1)];
+          var d = amap[idx];
+          if (d < 0 || d >= dels.length) d = 0;
+          var ai = dels[d];
+          var first = !usedDel[d];
+          usedDel[d] = true;
           perBlock[aw[ai].blockIdx].push({
             text: normOutToken(bTokens[bi2]),
-            ai: idx < dels.length ? ai : null
+            ai: first ? ai : null
           });
         });
       } else if (inss.length) {
@@ -313,10 +437,12 @@
         node = el.cloneNode(true);
         node.querySelectorAll('ul,ol').forEach(function (x) { x.remove(); });
       }
-      var t = node.textContent.replace(/\s+/g, ' ').trim();
-      if (!t) return;
-      if (el.tagName === 'LI') t = '\u2022 ' + t; // маркер списка -> "•"
-      out.push(t);
+      var raw = node.textContent.replace(/[ \t\u00A0]+/g, ' ');
+      var pieces = raw.split(/\n+/).map(function (x) { return x.trim(); })
+        .filter(function (x) { return x; });
+      if (!pieces.length) return;
+      if (el.tagName === 'LI') pieces[0] = '\u2022 ' + pieces[0]; // маркер -> "•"
+      pieces.forEach(function (x) { out.push(x); });
     });
   }
 
@@ -326,8 +452,16 @@
     opts = opts || {};
     var P = DOMParserImpl || (typeof DOMParser !== 'undefined' ? DOMParser : null);
     var doc = new P().parseFromString(html, 'text/html');
+    // Shift+Enter в Word = <br>: без этого «verbatim.» и «Use» склеятся
+    doc.querySelectorAll('br').forEach(function (el) {
+      el.replaceWith(doc.createTextNode('\n'));
+    });
     if (opts.stripStrike !== false) {
-      doc.querySelectorAll('s,del,strike').forEach(function (el) { el.remove(); });
+      // заменяем пробелом, а не удаляем: если вычеркнуты и окружающие
+      // пробелы ("providing~~ precise ~~optimal"), слова не должны склеиться
+      doc.querySelectorAll('s,del,strike').forEach(function (el) {
+        el.replaceWith(doc.createTextNode(' '));
+      });
     }
     var out = [];
     var scriptCells = [];
@@ -379,7 +513,12 @@
     groupOps: groupOps,
     buildCorrected: buildCorrected,
     balanceWords: balanceWords,
-    extractDocxText: extractDocxText
+    extractDocxText: extractDocxText,
+    stripWordComments: stripWordComments,
+    splitGluedSentences: splitGluedSentences,
+    fixPunctuationCollisions: fixPunctuationCollisions,
+    tokenSim: tokenSim,
+    alignInsToDel: alignInsToDel
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof document === 'undefined') return; // Node — только логика, без UI
@@ -445,9 +584,9 @@
     state.srt = srt;
     state.a = srt.words.map(function (w) { return w.text; });
 
-    var docText = docTA.value;
+    var docText = stripWordComments(docTA.value);
     if ($('optDash').checked) docText = normalizeDashes(docText);
-    docText = normChars(docText);
+    docText = fixPunctuationCollisions(splitGluedSentences(normChars(docText)));
     state.b = docText.split(/\s+/).filter(Boolean);
     if (!state.b.length) {
       alert('Правое поле пустое — вставьте текст сценария или загрузите .docx.');

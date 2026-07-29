@@ -15,6 +15,15 @@ async function run() {
   assert(!text.includes('Intro') && !text.includes('asset1.mp4') && !text.includes('Section'), 'другие колонки отброшены');
   assert(!text.includes('Normal start'), 'текст вне таблицы не взят, т.к. есть колонка Script');
 
+  // 1b. Перенос строки внутри абзаца (Shift+Enter) и зачёркнутое внутри строки
+  r = await mammoth.convertToHtml({ path: __dirname + '/fixtures/linebreak.docx' });
+  text = api.extractDocxText(r.value, { stripStrike: true }, DOMParser);
+  console.log('--- LINEBREAK ---\n' + text + '\n---');
+  assert(!text.includes('score.It'), 'Shift+Enter не склеил score. и It');
+  assert(text.includes('providing optimal response'), 'зачёркнутое заменено пробелом');
+  assert(!text.includes('providingoptimal'), 'нет склейки после вырезки');
+  assert(!text.includes('Why CXI') && !text.includes('Section'), 'только колонка Script');
+
   // 2. (опционально) Реальный мастер-док: node docx-test.js path/to/master.docx
   if (!process.argv[2]) { console.log('DOCX EXTRACT TESTS OK (синтетика)'); return; }
   r = await mammoth.convertToHtml({ path: process.argv[2] });
