@@ -496,7 +496,9 @@
         }
       });
     } else {
-      collectLines(doc.body, out);
+      // от документа, а не от body: в Node-эмуляции DOM абзацы могут
+      // лежать вне body, в браузере результат тот же
+      collectLines(doc, out);
     }
     return out.join('\n');
   }
@@ -556,6 +558,46 @@
     r.readAsText(file, 'utf-8');
   }
 
+  function showNote(msg, kind) {
+    var el = $('docNote');
+    el.textContent = msg;
+    el.className = 'note' + (kind ? ' ' + kind : '');
+    el.hidden = false;
+  }
+
+  // Старый формат .doc (Word 97-2003) — бинарный, mammoth его не читает.
+  function importLegacyDoc(file) {
+    if (!window.LegacyDoc) {
+      showNote('Модуль чтения .doc не загрузился. Обновите страницу или сохраните файл как .docx.', 'err');
+      return;
+    }
+    file.arrayBuffer().then(function (buf) {
+      var ex = window.LegacyDoc.extractTextEx(buf, {
+        stripStrike: $('optStrike').checked
+      });
+      var res = window.LegacyDoc.toHtml(ex.text);
+      docTA.value = extractDocxText(res.html, {
+        stripStrike: $('optStrike').checked
+      });
+      updateCounts();
+      var head = res.detected
+        ? 'Формат .doc (Word 97-2003): извлечена колонка со сценарием — ' +
+          res.rows + ' строк из таблицы в ' + res.columns + ' колонки. '
+        : 'Формат .doc (Word 97-2003): колонку со сценарием определить не удалось, ' +
+          'извлечён весь текст — удалите лишние строки вручную. ';
+      var cuts = [];
+      if (ex.hadStrike) cuts.push('зачёркнутые фрагменты');
+      if (ex.hadDel) cuts.push('удаления из режима рецензирования');
+      var mid = cuts.length ? 'Распознаны и убраны: ' + cuts.join(', ') + '. ' : '';
+      showNote(head + mid + 'Учтите: маркеры списков (•) в формате .doc не хранятся ' +
+        'в тексте — если в сценарии есть списки, добавьте «•» вручную или сохраните ' +
+        'файл в Word как .docx.', res.detected ? 'ok' : 'warn');
+    }).catch(function (e) {
+      showNote('Не удалось прочитать .doc: ' + e.message +
+        '. Сохраните файл в Word как .docx и загрузите снова.', 'err');
+    });
+  }
+
   function importDocx(file) {
     if (!window.mammoth) {
       alert('Библиотека mammoth не загрузилась. Для чтения .docx нужен доступ в интернет при первом открытии страницы. Либо вставьте текст сценария вручную.');
@@ -568,8 +610,10 @@
         stripStrike: $('optStrike').checked
       });
       updateCounts();
+      showNote('Файл .docx прочитан: зачёркнутый текст и правки рецензирования ' +
+        'обработаны, колонка Script выделена (если она есть в документе).', 'ok');
     }).catch(function (e) {
-      alert('Не удалось прочитать .docx: ' + e.message);
+      showNote('Не удалось прочитать .docx: ' + e.message, 'err');
     });
   }
 
@@ -740,6 +784,7 @@
       var f = e.target.files[0];
       if (!f) return;
       if (/\.docx$/i.test(f.name)) importDocx(f);
+      else if (/\.(doc|dot)$/i.test(f.name)) importLegacyDoc(f);
       else readTextFile(f, function (t) { docTA.value = t; updateCounts(); });
     });
 
