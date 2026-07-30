@@ -528,6 +528,8 @@
   /* ================= UI ================= */
 
   var state = {
+    note: null,
+    stats: null,
     srt: null,
     srtName: null,
     a: [],       // токены SRT
@@ -538,6 +540,10 @@
 
   function $(id) { return document.getElementById(id); }
 
+  function t(key, params) {
+    return (window.I18N && window.I18N.t) ? window.I18N.t(key, params) : key;
+  }
+
   var srtTA, docTA, diffView, outputTA, statsEl, appliedEl;
 
   function wordCount(s) {
@@ -546,8 +552,8 @@
   }
 
   function updateCounts() {
-    $('srtCount').textContent = wordCount(srtTA.value) + ' слов';
-    $('docCount').textContent = wordCount(docTA.value) + ' слов';
+    $('srtCount').textContent = t('words', { n: wordCount(srtTA.value) });
+    $('docCount').textContent = t('words', { n: wordCount(docTA.value) });
   }
 
   /* ---------- Импорт файлов ---------- */
@@ -558,9 +564,36 @@
     r.readAsText(file, 'utf-8');
   }
 
-  function showNote(msg, kind) {
+  // Коды ошибок из doc.js -> локализованный текст
+  function errText(e) {
+    var code = e && (e.code || e.message);
+    if (/^E_[A-Z_]+$/.test(String(code))) {
+      return t({
+        E_NOT_DOC: 'errNotDoc', E_NO_STREAM: 'errNoStream',
+        E_NOT_WORD: 'errNotWord', E_NO_TEXT: 'errNoText'
+      }[code] || 'errNotWord');
+    }
+    return (e && e.message) ? e.message : String(e);
+  }
+
+  function noteText(key, params) {
+    if (key !== '__doc__') return t(key, params);
+    // составная заметка про .doc
+    var p = params || {};
+    var head = p.detected
+      ? t('docHeadYes', { rows: p.rows, cols: p.cols })
+      : t('docHeadNo');
+    var cuts = [];
+    if (p.hadStrike) cuts.push(t('cutStrike'));
+    if (p.hadDel) cuts.push(t('cutDel'));
+    var mid = cuts.length ? t('docCuts', { list: cuts.join(', ') }) : '';
+    return head + mid + t('docBullets');
+  }
+
+  function showNote(key, params, kind) {
     var el = $('docNote');
-    el.textContent = msg;
+    state.note = { key: key, params: params, kind: kind };
+    el.textContent = noteText(key, params);
     el.className = 'note' + (kind ? ' ' + kind : '');
     el.hidden = false;
   }
@@ -568,7 +601,7 @@
   // Старый формат .doc (Word 97-2003) — бинарный, mammoth его не читает.
   function importLegacyDoc(file) {
     if (!window.LegacyDoc) {
-      showNote('Модуль чтения .doc не загрузился. Обновите страницу или сохраните файл как .docx.', 'err');
+      showNote('noLegacy', null, 'err');
       return;
     }
     file.arrayBuffer().then(function (buf) {
@@ -580,27 +613,18 @@
         stripStrike: $('optStrike').checked
       });
       updateCounts();
-      var head = res.detected
-        ? 'Формат .doc (Word 97-2003): извлечена колонка со сценарием — ' +
-          res.rows + ' строк из таблицы в ' + res.columns + ' колонки. '
-        : 'Формат .doc (Word 97-2003): колонку со сценарием определить не удалось, ' +
-          'извлечён весь текст — удалите лишние строки вручную. ';
-      var cuts = [];
-      if (ex.hadStrike) cuts.push('зачёркнутые фрагменты');
-      if (ex.hadDel) cuts.push('удаления из режима рецензирования');
-      var mid = cuts.length ? 'Распознаны и убраны: ' + cuts.join(', ') + '. ' : '';
-      showNote(head + mid + 'Учтите: маркеры списков (•) в формате .doc не хранятся ' +
-        'в тексте — если в сценарии есть списки, добавьте «•» вручную или сохраните ' +
-        'файл в Word как .docx.', res.detected ? 'ok' : 'warn');
+      showNote('__doc__', {
+        detected: res.detected, rows: res.rows || 0, cols: res.columns || 0,
+        hadStrike: ex.hadStrike, hadDel: ex.hadDel
+      }, res.detected ? 'ok' : 'warn');
     }).catch(function (e) {
-      showNote('Не удалось прочитать .doc: ' + e.message +
-        '. Сохраните файл в Word как .docx и загрузите снова.', 'err');
+      showNote('docErr', { msg: errText(e) }, 'err');
     });
   }
 
   function importDocx(file) {
     if (!window.mammoth) {
-      alert('Библиотека mammoth не загрузилась. Для чтения .docx нужен доступ в интернет при первом открытии страницы. Либо вставьте текст сценария вручную.');
+      showNote('noMammoth', null, 'err');
       return;
     }
     file.arrayBuffer().then(function (buf) {
@@ -610,10 +634,9 @@
         stripStrike: $('optStrike').checked
       });
       updateCounts();
-      showNote('Файл .docx прочитан: зачёркнутый текст и правки рецензирования ' +
-        'обработаны, колонка Script выделена (если она есть в документе).', 'ok');
+      showNote('docxOk', null, 'ok');
     }).catch(function (e) {
-      showNote('Не удалось прочитать .docx: ' + e.message, 'err');
+      showNote('docxErr', { msg: errText(e) }, 'err');
     });
   }
 
@@ -622,7 +645,7 @@
   function compare() {
     var srt = parseSRT(srtTA.value);
     if (!srt.blocks.length) {
-      alert('Не удалось найти блоки субтитров в левом поле. Вставьте содержимое .srt файла целиком (с тайм-кодами).');
+      alert(t('alertNoSrt'));
       return;
     }
     state.srt = srt;
@@ -633,7 +656,7 @@
     docText = fixPunctuationCollisions(splitGluedSentences(normChars(docText)));
     state.b = docText.split(/\s+/).filter(Boolean);
     if (!state.b.length) {
-      alert('Правое поле пустое — вставьте текст сценария или загрузите .docx.');
+      alert(t('alertNoDoc'));
       return;
     }
 
@@ -646,7 +669,9 @@
     renderStats();
     updateOutput();
     $('results').hidden = false;
-    $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if ($('results').scrollIntoView) {
+      $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }
 
   function renderDiff() {
@@ -660,7 +685,7 @@
         var m = document.createElement('span');
         m.className = 'bm';
         m.textContent = String(curBlock + 1);
-        m.title = 'Блок субтитров №' + (curBlock + 1);
+        m.title = t('blockTitle', { n: curBlock + 1 });
         frag.appendChild(m);
       }
       var sp = document.createElement('span');
@@ -677,7 +702,7 @@
         sp.textContent = normOutToken(state.b[op.bi]);
       }
       if (op.t !== 'eq') {
-        sp.title = 'Правка #' + (op.g + 1) + ' — клик: применить/отменить';
+        sp.title = t('editTitle', { n: op.g + 1 });
       }
       frag.appendChild(sp);
       frag.appendChild(document.createTextNode(' '));
@@ -693,17 +718,14 @@
     var sim = state.a.length + state.b.length
       ? Math.round((2 * eq / (state.a.length + state.b.length)) * 1000) / 10
       : 100;
-    statsEl.textContent =
-      'Правок: ' + state.groups.length +
-      ' • удаляется слов: ' + del +
-      ' • добавляется слов: ' + ins +
-      ' • совпадение: ' + sim + '%';
+    state.stats = { edits: state.groups.length, del: del, ins: ins, sim: sim };
+    statsEl.textContent = t('statsLine', state.stats);
     updateAppliedCounter();
   }
 
   function updateAppliedCounter() {
     var on = state.groups.filter(function (g) { return g.applied; }).length;
-    appliedEl.textContent = 'Применено правок: ' + on + ' / ' + state.groups.length;
+    appliedEl.textContent = t('applied', { on: on, total: state.groups.length });
   }
 
   function toggleGroup(id) {
@@ -757,9 +779,8 @@
   function copyOutput() {
     navigator.clipboard.writeText(outputTA.value).then(function () {
       var b = $('btnCopy');
-      var t = b.textContent;
-      b.textContent = 'Скопировано ✓';
-      setTimeout(function () { b.textContent = t; }, 1500);
+      b.textContent = t('copied');
+      setTimeout(function () { b.textContent = t('btnCopy'); }, 1500);
     });
   }
 
@@ -797,6 +818,18 @@
     $('btnCopy').addEventListener('click', copyOutput);
     $('btnDownload').addEventListener('click', download);
     $('optRemoveEmpty').addEventListener('change', updateOutput);
+
+    document.addEventListener('langchange', function () {
+      updateCounts();
+      if (state.note) {
+        $('docNote').textContent = noteText(state.note.key, state.note.params);
+      }
+      if (state.srt) {
+        renderDiff();
+        if (state.stats) statsEl.textContent = t('statsLine', state.stats);
+        updateAppliedCounter();
+      }
+    });
 
     diffView.addEventListener('click', function (e) {
       var sp = e.target.closest('[data-g]');

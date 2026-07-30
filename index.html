@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SRT ⇄ Script Compare — сверка субтитров со сценарием</title>
+<title>SRT ⇄ Script Compare</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="icon" href="favicon.ico" sizes="48x48">
 <link rel="icon" type="image/png" href="favicon-16.png" sizes="16x16">
@@ -13,117 +13,120 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="css/style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js" defer></script>
+<script src="js/i18n.js" defer></script>
 <script src="js/doc.js" defer></script>
 <script src="js/app.js" defer></script>
 </head>
 <body>
 
 <header>
+  <div class="langbar" role="group" aria-label="Language">
+    <button type="button" data-lang="en" title="English">EN</button>
+    <button type="button" data-lang="uk" title="Українська">УКР</button>
+    <button type="button" data-lang="ru" title="Русский">РУС</button>
+  </div>
   <h1>SRT ⇄ Script Compare</h1>
-  <p class="sub">Сверка SRT-субтитров с утверждённым сценарием (Word).
-  Тайм-коды остаются нетронутыми, меняется только текст.</p>
+  <p class="sub" data-i18n="sub"></p>
 </header>
 
 <main>
 
   <!-- Шаг 1: входные данные -->
   <section class="step">
-    <h2><span class="n">1</span> Вставьте данные</h2>
+    <h2><span class="n">1</span> <span data-i18n="step1"></span></h2>
     <div class="inputs">
       <div class="panel">
         <div class="panel-head">
-          <h3>SRT-файл (как есть, с тайм-кодами)</h3>
-          <label class="filebtn">Загрузить .srt
+          <h3 data-i18n="srtPanel"></h3>
+          <label class="filebtn"><span data-i18n="srtLoad"></span>
             <input type="file" id="srtFile" accept=".srt,.txt">
           </label>
         </div>
-        <textarea id="srtInput" spellcheck="false"
-          placeholder="1&#10;00:00:06,300 --> 00:00:09,970&#10;Batteries are a consumable part that will&#10;eventually need replacement...&#10;&#10;2&#10;..."></textarea>
-        <div class="hint" id="srtCount">0 слов</div>
+        <textarea id="srtInput" spellcheck="false" data-i18n-ph="srtPh"></textarea>
+        <div class="hint" id="srtCount"></div>
       </div>
 
       <div class="panel">
         <div class="panel-head">
-          <h3>Сценарий (текст из Word)</h3>
-          <label class="filebtn">Загрузить .docx / .doc
+          <h3 data-i18n="docPanel"></h3>
+          <label class="filebtn"><span data-i18n="docLoad"></span>
             <input type="file" id="docFile" accept=".docx,.doc,.txt">
           </label>
         </div>
-        <textarea id="docInput" spellcheck="false"
-          placeholder="Лучше загрузите .docx — из мастер-таблицы автоматически возьмётся только колонка Script, зачёркнутое и непринятые правки рецензирования (tracked changes) будут отброшены, вставки — приняты.&#10;&#10;Если вставляете текст вручную из Word: сначала примите/отклоните правки рецензирования в самом Word (иначе удалённый текст скопируется вместе с обычным) и копируйте только колонку Script."></textarea>
-        <div class="hint" id="docCount">0 слов</div>
+        <textarea id="docInput" spellcheck="false" data-i18n-ph="docPh"></textarea>
+        <div class="hint" id="docCount"></div>
         <div class="note" id="docNote" hidden></div>
       </div>
     </div>
 
     <div class="options">
       <label><input type="checkbox" id="optStrike" checked>
-        При импорте .docx убирать <s>зачёркнутый</s> текст (вырезанные фрагменты)</label>
+        <span data-i18n-html="optStrike"></span></label>
       <label><input type="checkbox" id="optDash" checked>
-        Тире сценария «—», «--» приводить к « - »</label>
+        <span data-i18n-html="optDash"></span></label>
       <label><input type="checkbox" id="optRemoveEmpty" checked>
-        Удалять пустые блоки субтитров из результата</label>
+        <span data-i18n-html="optRemoveEmpty"></span></label>
     </div>
 
-    <button id="btnCompare" class="primary">Сравнить</button>
+    <button id="btnCompare" class="primary" data-i18n="btnCompare"></button>
   </section>
 
   <!-- Шаг 2 и 3: результаты -->
   <section class="step" id="results" hidden>
-    <h2><span class="n">2</span> Правки <small>— клик по подсветке включает/выключает правку</small></h2>
+    <h2><span class="n">2</span> <span data-i18n="step2"></span>
+      <small data-i18n="step2note"></small></h2>
 
     <div class="statsbar">
       <span id="stats"></span>
       <span id="appliedCounter"></span>
       <span class="grow"></span>
-      <button id="btnAll" class="mini">Применить все</button>
-      <button id="btnNone" class="mini">Снять все</button>
+      <button id="btnAll" class="mini" data-i18n="btnAll"></button>
+      <button id="btnNone" class="mini" data-i18n="btnNone"></button>
     </div>
 
     <div class="legend">
-      <span class="lg"><span class="sw del"></span> убирается из SRT</span>
-      <span class="lg"><span class="sw ins"></span> добавляется из сценария</span>
-      <span class="lg"><span class="sw off"></span> правка выключена</span>
-      <span class="lg"><span class="bm-demo">12</span> номер блока субтитров</span>
+      <span class="lg"><span class="sw del"></span> <span data-i18n="legendDel"></span></span>
+      <span class="lg"><span class="sw ins"></span> <span data-i18n="legendIns"></span></span>
+      <span class="lg"><span class="sw off"></span> <span data-i18n="legendOff"></span></span>
+      <span class="lg"><span class="bm-demo">12</span> <span data-i18n="legendBlock"></span></span>
     </div>
 
     <div id="diffView" class="diff"></div>
 
-    <h2><span class="n">3</span> Готовый SRT <small>— тайм-коды не тронуты, нумерация обновлена</small></h2>
+    <h2><span class="n">3</span> <span data-i18n="step3"></span>
+      <small data-i18n="step3note"></small></h2>
     <textarea id="output" class="out" spellcheck="false" readonly></textarea>
     <div class="actions">
-      <button id="btnCopy">Копировать</button>
-      <button id="btnDownload" class="primary">Скачать .srt</button>
+      <button id="btnCopy" data-i18n="btnCopy"></button>
+      <button id="btnDownload" class="primary" data-i18n="btnDownload"></button>
     </div>
   </section>
 
   <details class="rules">
-    <summary>Правила сверки, заложенные в инструмент</summary>
+    <summary data-i18n="rulesSummary"></summary>
     <ul>
-      <li>Тайм-коды и разбиение на блоки берутся из исходного SRT и не меняются; нумерация блоков в результате идёт заново с 1.</li>
-      <li>«Умные» кавычки/апострофы (’ “ ”), неразрывные пробелы и «…» не считаются различиями — в результате остаётся вариант из SRT.</li>
-      <li>Зачёркнутый текст в .docx — это вырезанные из видео фрагменты, при импорте он отбрасывается.</li>
-      <li>Непринятые правки рецензирования Word (tracked changes) при загрузке .docx обрабатываются автоматически: удалённое отбрасывается, вставленное принимается. При ручном копировании текста из Word так не получится — удалённый текст попадёт в буфер обмена, поэтому предпочитайте загрузку файла.</li>
-      <li>Поддерживается и старый формат <b>.doc</b> (Word 97-2003): он читается напрямую, колонка со сценарием определяется по структуре таблицы, зачёркнутый текст и правки рецензирования тоже распознаются. Единственное отличие от .docx — маркеры списков «•» в .doc не хранятся в тексте и их придётся добавить вручную.</li>
-      <li>Если документ — мастер-таблица со столбцом «Script» (#, Section, Script, Asset…), при импорте берётся только этот столбец; остальные колонки и таблицы игнорируются.</li>
-      <li>Маркированные списки из .docx переносятся с маркером «•».</li>
-      <li>Одиночные тире сценария («--», «—») превращаются в « - ». Оторванный дефис («… De Dion -style») отделяется от слова: тире остаётся в своём блоке, слово — в своём.</li>
-      <li><b>Текст не переезжает в чужой тайм-код:</b> заменяющие слова распределяются по блокам по схожести с заменяемыми, а не подряд. «De Dion» встаёт вместо «D-D-On» в своём блоке, «style» остаётся в следующем.</li>
-      <li><b>Пунктуационные коллизии</b> после вырезок в доке исправляются: «. ,» и «, .» невозможны — остаётся один знак (перед строчной буквой запятая, перед заглавной точка). Троеточие «...» не трогается.</li>
-      <li><b>Вырезанный текст не склеивает соседние слова:</b> «providing~~ precise ~~optimal» даёт «providing optimal», а не «providingoptimal».</li>
-      <li><b>Перенос строки внутри абзаца Word</b> (Shift+Enter) не склеивает предложения: «score.It» → «score. It», «verbatim.Use» → «verbatim. Use». Домены (H-D.com) и аббревиатуры (H.O.G.) не затрагиваются.</li>
-      <li>Ссылки на комментарии Word из вставленного текста (<code>[[ZD1]](#_msocom_1)</code>) и строки с их содержимым удаляются автоматически.</li>
-      <li>Длинные фрагменты (8+ слов), которые есть в SRT, но отсутствуют в сценарии (вступления, представления спикеров), по умолчанию <b>не</b> удаляются — включите такую правку кликом, если удалить всё же нужно.</li>
-      <li>Каждую правку можно выключить кликом — например, если сценарий содержит опечатку, а в SRT написано верно (номера моделей, URL, телефоны и т.п. чаще правильнее в SRT).</li>
-      <li>Переносы строк внутри блока сохраняются с исходных позиций; если строка из-за правок «слиплась», блок автоматически перебивается на исходное число строк.</li>
+      <li data-i18n-html="r1"></li>
+      <li data-i18n-html="r2"></li>
+      <li data-i18n-html="r3"></li>
+      <li data-i18n-html="r4"></li>
+      <li data-i18n-html="r5"></li>
+      <li data-i18n-html="r6"></li>
+      <li data-i18n-html="r7"></li>
+      <li data-i18n-html="r8"></li>
+      <li data-i18n-html="r9"></li>
+      <li data-i18n-html="r10"></li>
+      <li data-i18n-html="r11"></li>
+      <li data-i18n-html="r12"></li>
+      <li data-i18n-html="r13"></li>
+      <li data-i18n-html="r14"></li>
+      <li data-i18n-html="r15"></li>
+      <li data-i18n-html="r16"></li>
     </ul>
   </details>
 
 </main>
 
-<footer>
-  Работает полностью в браузере — файлы никуда не отправляются.
-</footer>
+<footer data-i18n="footer"></footer>
 
 </body>
 </html>

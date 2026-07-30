@@ -262,3 +262,38 @@ footer {
 .note.ok { background: #edfaef; border-color: #b8e3c2; color: #14532d; }
 .note.warn { background: #fff8e6; border-color: #ecd08a; color: #6b4a06; }
 .note.err { background: #fdeeee; border-color: #f0b6b6; color: #8a1c1c; }
+
+/* Переключатель языка */
+header { position: relative; }
+
+.langbar {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+}
+.langbar button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.langbar button:hover { background: #f0f1fa; color: var(--text); }
+.langbar button.on {
+  background: var(--accent);
+  color: #fff;
+}
+@media (max-width: 620px) {
+  .langbar { position: static; margin: 0 auto 14px; }
+  header { display: flex; flex-direction: column; }
+}

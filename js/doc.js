@@ -7,6 +7,13 @@
 (function () {
   'use strict';
 
+  // Ошибки возвращаются кодами — текст подставляет интерфейс на своём языке
+  function errCode(code) {
+    var e = new Error(code);
+    e.code = code;
+    return e;
+  }
+
   var SIG = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
   var FREE = 0xFFFFFFFF, ENDCHAIN = 0xFFFFFFFE;
 
@@ -15,7 +22,7 @@
   function Cfb(buf) {
     var dv = new DataView(buf), u8 = new Uint8Array(buf), i;
     for (i = 0; i < 8; i++) {
-      if (u8[i] !== SIG[i]) throw new Error('файл не похож на Word 97-2003 (.doc)');
+      if (u8[i] !== SIG[i]) throw errCode('E_NOT_DOC');
     }
     var secSize = 1 << dv.getUint16(0x1E, true);
     var miniSecSize = 1 << dv.getUint16(0x20, true);
@@ -243,9 +250,9 @@
     var dropStrike = opts.stripStrike !== false;
     var cfb = new Cfb(buf);
     var wd = cfb.stream('WordDocument');
-    if (!wd || wd.length < 0x200) throw new Error('в файле нет потока WordDocument');
+    if (!wd || wd.length < 0x200) throw errCode('E_NO_STREAM');
     var dv = new DataView(wd.buffer, wd.byteOffset, wd.byteLength);
-    if (dv.getUint16(0, true) !== 0xA5EC) throw new Error('это не документ Word');
+    if (dv.getUint16(0, true) !== 0xA5EC) throw errCode('E_NOT_WORD');
 
     var flags = dv.getUint16(0x0A, true);
     var tbl = cfb.stream(((flags >> 9) & 1) ? '1Table' : '0Table');
@@ -297,7 +304,7 @@
       if (fcMac > fcMin && fcMac <= wd.length) {
         text = decodeCp1252(wd.subarray(fcMin, fcMac));
       } else {
-        throw new Error('не удалось найти текст документа');
+        throw errCode('E_NO_TEXT');
       }
     }
 
